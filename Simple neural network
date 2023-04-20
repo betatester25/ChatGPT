@@ -1,0 +1,50 @@
+import torch
+import torch.nn as nn
+import torch.optim as optim
+
+# Определяем класс нейронной сети
+class Net(nn.Module):
+    def __init__(self):
+        super(Net, self).__init__()
+        self.fc1 = nn.Linear(784, 256)  # Полносвязный слой размерности 784 -> 256
+        self.fc2 = nn.Linear(256, 128)  # Полносвязный слой размерности 256 -> 128
+        self.fc3 = nn.Linear(128, 10)   # Полносвязный слой размерности 128 -> 10
+
+    def forward(self, x):
+        x = torch.relu(self.fc1(x))    # Применяем функцию активации ReLU к выходу первого слоя
+        x = torch.relu(self.fc2(x))    # Применяем функцию активации ReLU к выходу второго слоя
+        x = self.fc3(x)               # Выходной слой без функции активации
+        return x
+
+# Загрузка набора данных MNIST
+trainset = torch.utils.data.DataLoader(
+    torch.utils.data.datasets.MNIST(root='./data', train=True, download=True,
+        transform=torch.transforms.Compose([
+            torch.transforms.ToTensor(),
+            torch.transforms.Normalize((0.1307,), (0.3081,))
+        ])), batch_size=32, shuffle=True)
+
+# Создание экземпляра нейронной сети
+net = Net()
+
+# Определение функции потерь и оптимизатора
+criterion = nn.CrossEntropyLoss()
+optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
+
+# Обучение нейронной сети на 5 эпохах
+for epoch in range(5):
+    running_loss = 0.0
+    for i, data in enumerate(trainset, 0):
+        inputs, labels = data
+        inputs = inputs.view(inputs.shape[0], -1)  # Преобразование входных данных в плоский вектор
+        optimizer.zero_grad()   # Обнуление градиентов
+        outputs = net(inputs)   # Прямое распространение
+        loss = criterion(outputs, labels)   # Вычисление функции потерь
+        loss.backward()  # Обратное распространение ошибки
+        optimizer.step()  # Обновление весов
+        running_loss += loss.item()
+
+        if i % 1000 == 999:
+            print('[%d, %5d] loss: %.3f' % (epoch + 1, i + 1, running_loss / 1000))
+            running_loss = 0.0
+print('Обучение завершено')
