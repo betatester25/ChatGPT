@@ -1,0 +1,58 @@
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torchtext.datasets import Multi30k
+from torchtext.data import Field, BucketIterator
+
+# Определение поля для обработки текстовых данных
+SRC = Field(tokenize='spacy', tokenizer_language='de', init_token='<sos>', eos_token='<eos>', lower=True)
+TRG = Field(tokenize='spacy', tokenizer_language='en', init_token='<sos>', eos_token='<eos>', lower=True)
+
+# Загрузка набора данных и разделение на обучающую и тестовую выборки
+train_data, valid_data, test_data = Multi30k.splits(exts=('.de', '.en'), fields=(SRC, TRG))
+
+# Построение словаря для перевода слов в индексы
+SRC.build_vocab(train_data, min_freq=2)
+TRG.build_vocab(train_data, min_freq=2)
+
+# Определение размера пакета и загрузчиков данных
+BATCH_SIZE = 64
+train_iterator, valid_iterator, test_iterator = BucketIterator.splits(
+    (train_data, valid_data, test_data), batch_size=BATCH_SIZE, device=torch.device('cuda'))
+
+# Определение модели Transformer
+class Transformer(nn.Module):
+    def __init__(self, src_vocab_size, trg_vocab_size, d_model, nhead, dim_feedforward, num_layers, dropout):
+        super().__init__()
+        self.encoder = nn.Embedding(src_vocab_size, d_model)
+        self.pos_encoder = nn.Sequential(nn.Linear(d_model, d_model), nn.Dropout(dropout), nn.ReLU())
+        encoder_layer = nn.TransformerEncoderLayer(d_model, nhead, dim_feedforward, dropout)
+        self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers)
+        self.decoder = nn.Embedding(trg_vocab_size, d_model)
+        self.pos_decoder = nn.Sequential(nn.Linear(d_model, d_model), nn.Dropout(dropout), nn.ReLU())
+        decoder_layer = nn.TransformerDecoderLayer(d_model, nhead, dim_feedforward, dropout)
+        self.transformer_decoder = nn.TransformerDecoder(decoder_layer, num_layers)
+        self.fc_out = nn.Linear(d_model, trg_vocab_size)
+        self.dropout = nn.Dropout(dropout)
+        self.d_model = d_model
+
+    def forward(self, src, trg, src_mask, tgt_mask, memory_mask):
+        src_emb = self.dropout(self.encoder(src) * torch.sqrt(self.d_model))
+        src_emb = self.pos_encoder(src_emb)
+        memory = self.transformer_encoder(src_emb, src_mask)
+        tgt_emb = self.dropout(self.decoder(trg) * torch.sqrt(self.d_model))
+        tgt_emb = self.pos_decoder(tgt_emb)
+        output = self.transformer_decoder(tgt_emb, memory, tgt_mask, memory_mask)
+        output = self.fc_out(output)
+        return output
+
+# Определение модели обучения и функции потерь
+SRC_VOCAB_SIZE = len(SRC.vocab)
+TRG_VOCAB_SIZE = len(TRG.vocab)
+D_MODEL = 512
+NHEAD = 8
+DIM_FEEDFORWARD = 2048
+NUM_LAYERS = 6
+DROPOUT = 0.1
+LEARNING_RATE = 0.0005
+model = Transformer(SRC_VOCAB_SIZE, TRG
